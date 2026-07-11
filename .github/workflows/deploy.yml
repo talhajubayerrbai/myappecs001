@@ -7,8 +7,6 @@ jobs:
   build:
     name: Build & Push Docker Image
     runs-on: ubuntu-latest
-    outputs:
-      image_uri: ${{ steps.set_image_uri.outputs.image_uri }}
 
     steps:
       - name: Checkout code
@@ -45,7 +43,6 @@ jobs:
             -var="image_uri=placeholder"
 
       - name: Build, tag, and push Docker image
-        id: set_image_uri
         env:
           REGISTRY: ${{ steps.login-ecr.outputs.registry }}
           REPO: ${{ secrets.PROJECT_NAME }}-app
@@ -54,7 +51,6 @@ jobs:
           IMAGE_URI="${REGISTRY}/${REPO}:${TAG}"
           docker build -t "${IMAGE_URI}" .
           docker push "${IMAGE_URI}"
-          echo "image_uri=${IMAGE_URI}" >> "$GITHUB_OUTPUT"
 
   provision:
     name: Terraform Apply
@@ -91,10 +87,18 @@ jobs:
       - name: Terraform Apply
         working-directory: terraform
         run: |
+          # Reconstruct the image URI from its deterministic components.
+          # We do NOT use needs.build.outputs.image_uri because GitHub Actions
+          # masks it (it contains the AWS account ID, a registered secret) and
+          # passes an empty string to downstream jobs, causing ECS to reject the
+          # task definition with "Container.image should not be null or empty".
+          ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
+          IMAGE_URI="${ACCOUNT_ID}.dkr.ecr.${{ secrets.AWS_REGION }}.amazonaws.com/${{ secrets.PROJECT_NAME }}-app:${{ github.sha }}"
+          echo "Deploying image: ${IMAGE_URI}"
           terraform apply -auto-approve \
             -var="project_name=${{ secrets.PROJECT_NAME }}" \
             -var="aws_region=${{ secrets.AWS_REGION }}" \
-            -var="image_uri=${{ needs.build.outputs.image_uri }}"
+            -var="image_uri=${IMAGE_URI}"
 
       - name: Capture Terraform outputs
         id: tf_output
