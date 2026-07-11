@@ -7,7 +7,7 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 COPY main.py .
 COPY app/ ./app/
-COPY public/ ./public/ 2>/dev/null || true
+COPY public/ ./public/
 
 EXPOSE 8000
 
